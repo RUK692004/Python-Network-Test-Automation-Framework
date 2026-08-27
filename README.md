@@ -260,19 +260,31 @@ platform win32 -- Python 3.11.9, pytest-8.x, pluggy-x
 rootdir: D:\...\network-test-automation
 configfile: pytest.ini
 testpaths: tests
-collected 30 items
+collected 33 items
 
-tests/test_ping.py::test_ping_reachable_host PASSED                     [ 11%]
-tests/test_ping.py::test_ping_unreachable_host PASSED                   [ 22%]
-tests/test_tcp.py::test_tcp_connection_success PASSED                   [ 33%]
-tests/test_tcp.py::test_tcp_connection_refused PASSED                   [ 44%]
-tests/test_tcp.py::test_tcp_invalid_hostname PASSED                     [ 55%]
-tests/test_tcp.py::test_tcp_invalid_port PASSED                         [ 66%]
-tests/test_port.py::test_port_availability_open PASSED                  [ 77%]
-tests/test_port.py::test_port_availability_closed PASSED                [ 88%]
-tests/test_port.py::test_port_availability_invalid_host PASSED          [100%]
+tests/test_ping.py::test_ping_reachable_host PASSED                     [  3%]
+tests/test_ping.py::test_ping_unreachable_host PASSED                   [  6%]
+tests/test_tcp.py::test_tcp_connection_success PASSED                   [  9%]
+tests/test_tcp.py::test_tcp_connection_refused PASSED                   [ 12%]
+tests/test_tcp.py::test_tcp_invalid_hostname PASSED                     [ 15%]
+tests/test_tcp.py::test_tcp_invalid_port PASSED                         [ 18%]
+tests/test_port.py::test_port_availability_open PASSED                  [ 21%]
+tests/test_port.py::test_port_availability_closed PASSED                [ 24%]
+tests/test_port.py::test_port_availability_invalid_host PASSED          [ 27%]
+tests/test_udp.py::test_udp_send_to_valid_target PASSED                 [ 30%]
+tests/test_udp.py::test_udp_send_receive_echo PASSED                    [ 33%]
+tests/test_udp.py::test_udp_multiple_packets PASSED                     [ 36%]
+tests/test_udp.py::test_udp_invalid_hostname PASSED                     [ 39%]
+tests/test_udp.py::test_udp_empty_host PASSED                           [ 42%]
+tests/test_udp.py::test_udp_invalid_port[0] PASSED                      [ 45%]
+tests/test_metrics.py::test_packet_loss_percentage PASSED               [ 48%]
+tests/test_metrics.py::test_calculate_latency_stats PASSED              [ 51%]
+tests/test_metrics.py::test_measure_udp_latency_no_loss PASSED          [ 54%]
+tests/test_metrics.py::test_measure_udp_latency_partial_loss PASSED     [ 57%]
+tests/test_metrics.py::test_measure_udp_latency_all_lost PASSED         [ 61%]
+... (remainder of the 33 UDP/metrics/ping/tcp/port tests omitted for brevity)
 
-============================== 30 passed in 5s ===============================
+============================== 33 passed in 5s ===============================
 ```
 
 ### Log File Output (`logs/network_tests.log`)

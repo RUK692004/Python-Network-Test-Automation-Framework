@@ -74,6 +74,24 @@ def _validate_target(host: str, port: int) -> Optional[str]:
     return None
 
 
+def _validate_udp_options(data: bytes, timeout: float) -> Optional[str]:
+    """
+    Validate UDP operation options (payload type and positive timeout).
+
+    Args:
+        data: Payload bytes to transmit.
+        timeout: Socket timeout in seconds.
+
+    Returns:
+        An error message string if the options are invalid, otherwise None.
+    """
+    if not isinstance(data, bytes):
+        return f"payload data must be bytes (got {type(data).__name__})"
+    if timeout is None or timeout <= 0:
+        return f"timeout must be a positive number (got {timeout!r})"
+    return None
+
+
 def _udp_result_from_validation(host: str, port: int, error: str) -> UDPResult:
     """Build a failed UDPResult from a validation error."""
     logger.error(f"UDP test FAILED | Target: {host}:{port} | Message: {error}")
@@ -84,7 +102,6 @@ def _udp_result_from_validation(host: str, port: int, error: str) -> UDPResult:
         message=error,
         error_type="ValueError",
     )
-
 
 
 def udp_send(
@@ -103,6 +120,9 @@ def udp_send(
         UDPResult: Structured result of the send operation.
     """
     error = _validate_target(host, port)
+    if error is not None:
+        return _udp_result_from_validation(host, port, error)
+    error = _validate_udp_options(data, timeout)
     if error is not None:
         return _udp_result_from_validation(host, port, error)
 
@@ -182,6 +202,9 @@ def udp_send_receive(
         UDPResult: Structured result, including latency_ms when successful.
     """
     error = _validate_target(host, port)
+    if error is not None:
+        return _udp_result_from_validation(host, port, error)
+    error = _validate_udp_options(data, timeout)
     if error is not None:
         return _udp_result_from_validation(host, port, error)
 

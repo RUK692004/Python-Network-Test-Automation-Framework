@@ -149,3 +149,36 @@ def test_udp_timeout_branch(monkeypatch):
     assert result.error_type == "socket.timeout"
     assert "timeout" in result.message.lower()
 
+
+@pytest.mark.udp
+@pytest.mark.network
+def test_udp_invalid_data_type():
+    """
+    Verify UDP send/receive rejects a non-bytes payload as a structured ValueError result.
+    """
+    result = udp_send_receive(host="127.0.0.1", port=5000, data="not-bytes", timeout=1.0)
+
+    assert isinstance(result, UDPResult)
+    assert result.success is False
+    assert result.error_type == "ValueError"
+    assert "bytes" in result.message.lower()
+
+
+@pytest.mark.udp
+@pytest.mark.network
+@pytest.mark.parametrize("invalid_timeout", [0, -1.0])
+def test_udp_invalid_timeout(invalid_timeout: float):
+    """
+    Verify UDP send/receive rejects a non-positive timeout as a structured result.
+
+    This ensures a raw ValueError is not raised from socket.settimeout; it is
+    instead classified and returned as a failed UDPResult.
+    """
+    result = udp_send_receive(host="127.0.0.1", port=5000, data=b"x", timeout=invalid_timeout)
+
+    assert isinstance(result, UDPResult)
+    assert result.success is False
+    assert result.error_type == "ValueError"
+    assert "timeout" in result.message.lower()
+
+

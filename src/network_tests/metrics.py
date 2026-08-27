@@ -92,8 +92,7 @@ def calculate_latency_stats(
     )
 
 
-
-def _measure_udp_latency(
+def measure_udp_latency(
     host: str,
     port: int,
     packet_count: int,
@@ -102,7 +101,12 @@ def _measure_udp_latency(
     payload: bytes = b"latency probe",
 ) -> LatencyStats:
     """
-    Measure UDP round-trip latency over a series of packets against a UDP endpoint.
+    Measure UDP round-trip latency and packet loss over a series of packets.
+
+    Sends ``packet_count`` UDP probes to the target and returns aggregate
+    statistics (sent/received/lost, packet-loss percentage, and minimum,
+    maximum, and average latency). A response timeout marks the individual
+    packet as lost and the remaining packets are still tested.
 
     Args:
         host: Target IP address or hostname.
@@ -116,7 +120,8 @@ def _measure_udp_latency(
         LatencyStats: Loss and latency statistics for the measurement run.
 
     Raises:
-        ValueError: If packet_count is not positive or timeout is not positive.
+        ValueError: If packet_count is not a positive integer or timeout is
+            not a positive number.
     """
     if not isinstance(packet_count, int) or packet_count <= 0:
         raise ValueError(
@@ -150,46 +155,14 @@ def _measure_udp_latency(
 
     stats = calculate_latency_stats(latencies, sent=packet_count, received=received)
     logger.info(
-        f"UDP latency measurement completed: sent={stats.sent}, received={stats.received}, "
-        f"lost={stats.lost}, loss%={stats.packet_loss_percent:.2f}, "
+        "UDP latency measurement completed: "
+        f"sent={stats.sent}, received={stats.received}, lost={stats.lost}, "
+        f"loss%={stats.packet_loss_percent:.2f}, "
+        f"min_latency={_format_ms(stats.min_latency_ms)}, "
+        f"max_latency={_format_ms(stats.max_latency_ms)}, "
         f"avg_latency={_format_ms(stats.average_latency_ms)}"
     )
     return stats
-
-
-def measure_udp_latency(
-    host: str,
-    port: int,
-    packet_count: int,
-    timeout: float = 1.0,
-    buffer_size: int = DEFAULT_BUFFER_SIZE,
-    payload: bytes = b"latency probe",
-) -> LatencyStats:
-    """
-    Send ``packet_count`` UDP probes to the target and return aggregate loss/latency stats.
-
-    Args:
-        host: Target IP address or hostname.
-        port: Target UDP port.
-        packet_count: Number of UDP packets to send.
-        timeout: Per-packet response timeout in seconds.
-        buffer_size: Receive buffer size in bytes.
-        payload: Payload bytes to send for each probe.
-
-    Returns:
-        LatencyStats: Loss and latency statistics for the measurement run.
-
-    Raises:
-        ValueError: If packet_count or timeout is invalid.
-    """
-    return _measure_udp_latency(
-        host=host,
-        port=port,
-        packet_count=packet_count,
-        timeout=timeout,
-        buffer_size=buffer_size,
-        payload=payload,
-    )
 
 
 def _format_ms(value: Optional[float]) -> str:
