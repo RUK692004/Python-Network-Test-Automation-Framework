@@ -25,6 +25,17 @@ This framework automates network connectivity verification by providing reusable
 
 ---
 
+## Features in Phase 2
+
+- **UDP Testing (`udp.py`)**: Send UDP datagrams and optionally receive responses against a target using Python `socket`, with configurable timeouts.
+- **Packet-Loss Measurement (`metrics.py`)**: Track packets sent, received, and lost, and compute packet-loss percentage.
+- **Latency Measurement (`metrics.py`)**: Measure request/response round-trip time using `time.perf_counter()`, reported in milliseconds.
+- **Latency Statistics (`metrics.py`)**: Compute minimum, maximum, and average latency over a run, plus sent/received/lost totals.
+- **Timeout Handling**: Every blocking network operation uses a configurable timeout; timeouts are logged and counted as lost packets without aborting the run.
+- **Deterministic Local Fixtures**: UDP echo and partial-loss servers run in-process so the suite never depends on a public Internet service.
+
+---
+
 ## Platform Support
 
 - **Windows (PowerShell):** implemented and tested. `ping.py` uses the
@@ -100,9 +111,12 @@ pytest -v
 To run specific test markers:
 
 ```bash
-pytest -m ping
-pytest -m tcp
-pytest -m port
+pytest -m ping        # ICMP ping tests
+pytest -m tcp         # TCP connection tests
+pytest -m port        # Port availability tests
+pytest -m udp         # UDP communication tests
+pytest -m metrics     # Packet-loss / latency metrics tests
+pytest -m network     # All network tests (multi-protocol)
 ```
 
 Or execute using the included shell script (Linux/WSL):
@@ -145,6 +159,95 @@ TCP_TIMEOUT = 3.0
 
 ---
 
+## Phase 2 Concepts: UDP, Packet Loss & Latency
+
+### UDP Testing
+
+The framework tests UDP communication using Python `socket` (SOCK_DGRAM). It can:
+
+- send a datagram to a configurable host and port (`udp_send`),
+- send a datagram and wait for a response (`udp_send_receive`), measuring the
+  round-trip latency.
+
+Every UDP operation validates the target, uses an explicit timeout, handles
+invalid hostnames, unresolved hosts, closed/unreachable ports, and resource
+cleanup, and returns a structured `UDPResult` (never a raw string or an
+unhandled exception).
+
+### Packet Loss
+
+Packet-loss measurement sends a configurable number of UDP probes and tracks:
+
+- packets sent,
+- packets successfully received,
+- packets lost,
+- packet-loss percentage.
+
+```text
+Packets sent:      20
+Packets received:  19
+Packets lost:       1
+Packet loss:       5.0%
+```
+
+The loss is computed as:
+
+```text
+packet_loss_percentage = (packets_sent - packets_received) / packets_sent * 100
+```
+
+### Latency & Latency Statistics
+
+Per-packet latency is measured with the high-resolution clock:
+
+```python
+start = time.perf_counter()
+send / receive
+end = time.perf_counter()
+latency_ms = (end - start) * 1000.0
+```
+
+Over a run the framework aggregates minimum, maximum, and average latency (in
+milliseconds) along with the received/lost counts, exposed as a structured
+`LatencyStats` object ready for later reporting and threshold phases.
+
+### Timeout Handling
+
+Every operation that blocks waiting for a response uses `socket.settimeout()`.
+A `socket.timeout` is handled separately from other socket errors: it is logged
+as a warning, recorded as a lost packet, and the remaining probes continue. On
+Windows, sending to a closed local UDP port may instead surface an immediate
+connection reset (`ConnectionResetError`), which is likewise classified as an
+unreachable target rather than a crash.
+
+### Testing Architecture
+
+```text
+                pytest
+                   |
+          -------------------
+          |        |        |
+         Ping     TCP      UDP
+          |        |        |
+          ---------+---------
+                   |
+              Network Layer
+                   |
+             Python socket
+                   |
+              TCP/IP Stack
+                   |
+               Network
+```
+
+### How Tests Are Kept Offline
+
+The automated suite runs local, deterministic fixtures — a UDP echo server and
+a UDP server that intentionally drops packets — on `127.0.0.1`. No Google,
+Cloudflare, public DNS, or external connectivity is required.
+
+---
+
 ## Example Output
 
 ### Pytest Execution Output
@@ -157,7 +260,7 @@ platform win32 -- Python 3.11.9, pytest-8.x, pluggy-x
 rootdir: D:\...\network-test-automation
 configfile: pytest.ini
 testpaths: tests
-collected 9 items
+collected 30 items
 
 tests/test_ping.py::test_ping_reachable_host PASSED                     [ 11%]
 tests/test_ping.py::test_ping_unreachable_host PASSED                   [ 22%]
@@ -169,7 +272,7 @@ tests/test_port.py::test_port_availability_open PASSED                  [ 77%]
 tests/test_port.py::test_port_availability_closed PASSED                [ 88%]
 tests/test_port.py::test_port_availability_invalid_host PASSED          [100%]
 
-============================== 9 passed in 0.45s ==============================
+============================== 30 passed in 5s ===============================
 ```
 
 ### Log File Output (`logs/network_tests.log`)
@@ -190,17 +293,21 @@ network-test-automation/
 │
 ├── tests/                      # Automated pytest suite
 │   ├── __init__.py
-│   ├── conftest.py             # Pytest fixtures and mock server helpers
+│   ├── conftest.py             # Pytest fixtures and mock/echo server helpers
 │   ├── test_ping.py            # ICMP Ping test cases
 │   ├── test_tcp.py             # TCP handshake connection test cases
-│   └── test_port.py            # TCP Port status (OPEN/CLOSED/TIMEOUT) test cases
+│   ├── test_port.py            # TCP Port status (OPEN/CLOSED/TIMEOUT) test cases
+│   ├── test_udp.py             # UDP communication test cases
+│   └── test_metrics.py         # Packet-loss / latency statistics test cases
 │
 ├── src/                        # Reusable core framework logic
 │   └── network_tests/
 │       ├── __init__.py
 │       ├── ping.py             # Subprocess ICMP ping execution module
 │       ├── tcp.py              # Socket-based TCP connection module
+│       ├── udp.py              # Socket-based UDP send/receive module
 │       ├── port.py             # Socket-based port reachability module
+│       ├── metrics.py          # Packet-loss & latency statistics module
 │       └── config.py           # Target configuration loader dataclass
 │
 ├── utils/                      # Helper utilities
@@ -225,13 +332,8 @@ network-test-automation/
 
 ## Future Development Roadmap
 
-Phase 1 provides the foundational architecture for future roadmap phases:
-
-- **Phase 2: Transport & Protocol Expansion**
-  - UDP packet testing
-  - Packet-loss measurement
-  - ICMP round-trip latency statistics
-  - Enhanced socket timeout handling
+Phases 1 and 2 are implemented. The framework provides the foundation for the
+remaining roadmap phases:
 
 - **Phase 3: Performance & Metrics Automation**
   - Throughput testing (integration with `iperf3`)
