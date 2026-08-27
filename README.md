@@ -25,6 +25,19 @@ This framework automates network connectivity verification by providing reusable
 
 ---
 
+## Platform Support
+
+- **Windows (PowerShell):** implemented and tested. `ping.py` uses the
+  Windows-compatible arguments `ping -n <count> -w <timeout_ms> <host>`
+  (timeout is converted from seconds to milliseconds).
+- **Linux / WSL:** the OS-aware code path is implemented in `ping.py`
+  (uses `ping -c <count> -W <timeout_seconds> <host>`) but has **not yet been
+  executed/verified** in this development environment. It is a small,
+  self-contained branch and is a candidate to validate on a Linux/WSL host
+  as a later improvement.
+
+---
+
 ## Technology Stack
 
 - **Language**: Python 3
@@ -103,16 +116,24 @@ chmod +x run_tests.sh
 
 ## Configurable Test Targets
 
-Target parameters can be configured using environment variables before executing tests:
+Target parameters can be configured using environment variables before executing tests.
 
-```bash
-export TARGET_HOST="127.0.0.1"
-export TARGET_PORT="8080"
-export PING_TIMEOUT="2"
-export TCP_TIMEOUT="3.0"
+Tested on Windows / PowerShell:
+
+```powershell
+$env:TARGET_HOST="127.0.0.1"
+$env:TARGET_PORT="8080"
+$env:PING_TIMEOUT="2"
+$env:TCP_TIMEOUT="3.0"
 
 pytest -v
 ```
+
+> On Linux / WSL use the equivalent Bash syntax: `export TARGET_HOST="127.0.0.1"`, etc.
+
+Invalid or missing values (for example an out-of-range port, a non-numeric
+timeout, or an empty host) fall back to the defaults below and log a warning
+instead of crashing.
 
 Default fallback target parameters:
 ```python
@@ -128,10 +149,12 @@ TCP_TIMEOUT = 3.0
 
 ### Pytest Execution Output
 
+Indicative output (the platform line below reflects a Python environment running pytest):
+
 ```text
 ============================= test session starts =============================
-platform linux -- Python 3.10.12, pytest-7.4.4, pluggy-1.4.0
-rootdir: /home/user/network-test-automation
+platform win32 -- Python 3.11.9, pytest-8.x, pluggy-x
+rootdir: D:\...\network-test-automation
 configfile: pytest.ini
 testpaths: tests
 collected 9 items

@@ -6,7 +6,6 @@ and provides structured results and logging.
 """
 
 from dataclasses import dataclass
-import os
 import platform
 import subprocess
 from typing import Optional
