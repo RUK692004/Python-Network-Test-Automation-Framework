@@ -5,6 +5,7 @@ Automated pytest suite for TCP socket connectivity tests.
 from typing import Tuple
 
 import pytest
+import socket
 
 # Import the module rather than `test_tcp_connection` by name so pytest does
 # not treat the imported function as a phantom test case (fixture 'host').
@@ -31,21 +32,34 @@ def test_tcp_connection_success(mock_tcp_server: Tuple[str, int]):
 
 @pytest.mark.tcp
 @pytest.mark.network
-def test_tcp_connection_refused(closed_port: Tuple[str, int]):
+def test_tcp_connection_refused(monkeypatch):
     """
-    Verify TCP connection test returns FAIL with ConnectionRefusedError status on closed port.
+    Verify the framework maps a refused TCP connection into a FAIL result.
+
+    A *genuine* ConnectionRefusedError cannot be produced reliably by connecting
+    to a closed local port: on Windows (and some sandboxes) the OS reports
+    WSAEWOULDBLOCK, which Python surfaces as socket.timeout rather than raising
+    WSAECONNREFUSED / ECONNREFUSED. To test the framework's refusal-handling
+    branch deterministically on every platform, we raise the exact socket error
+    at the connect boundary and assert the framework's translation of it.
+
+    Network result = CONNECTION_REFUSED  ->  pytest result = PASS
+    (the framework correctly reported the expected condition).
     """
-    host, port = closed_port
-    result = tcp_module.test_tcp_connection(host=host, port=port, timeout=1.0)
+
+    def refused_connect(self, address):
+        raise ConnectionRefusedError("[Errno 111] Connection refused")
+
+    # Patch only the connect step; the rest of the real socket flow is untouched.
+    monkeypatch.setattr(socket.socket, "connect", refused_connect)
+
+    result = tcp_module.test_tcp_connection(host="127.0.0.1", port=80, timeout=1.0)
 
     assert isinstance(result, TCPResult)
     assert result.is_connected is False
     assert result.status == "FAIL"
-    # Closing a port should surface as a graceful failure, not an unhandled
-    # exception. Linux/WSL surfaces it as ConnectionRefusedError, whereas
-    # Windows loopback may surface WSAEWOULDBLOCK as a socket.timeout instead.
-    assert result.error_type in {"ConnectionRefusedError", "socket.timeout"}
-    assert "refused" in result.message or "timed out" in result.message
+    assert result.error_type == "ConnectionRefusedError"
+    assert result.message == "Connection refused"
 
 
 @pytest.mark.tcp
@@ -76,3 +90,4 @@ def test_tcp_invalid_port():
     assert result.is_connected is False
     assert result.status == "FAIL"
     assert "Invalid port" in result.message
+    assert "between 1 and 65535" in result.message

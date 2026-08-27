@@ -7,7 +7,6 @@ to enable deterministic, offline-capable test execution.
 
 import socket
 import threading
-import time
 from typing import Generator, Tuple
 
 import pytest

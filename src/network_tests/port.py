@@ -54,7 +54,7 @@ def check_port_availability(
 
     if not host or not isinstance(host, str) or not host.strip():
         msg = "Invalid target host provided"
-        logger.error(f"Port test failed: {msg}")
+        logger.error(f"PORT AVAILABILITY TEST FAILED | Target: {host}:{port} | Message: {msg}")
         return PortStatusResult(
             target=str(host),
             port=port,
@@ -65,8 +65,8 @@ def check_port_availability(
         )
 
     if not isinstance(port, int) or not (1 <= port <= 65535):
-        msg = f"Invalid port number: {port}"
-        logger.error(f"Port test failed: {msg}")
+        msg = f"Invalid port number: {port}. Port must be between 1 and 65535."
+        logger.error(f"PORT AVAILABILITY TEST FAILED | Target: {host}:{port} | Message: {msg}")
         return PortStatusResult(
             target=host,
             port=port,
