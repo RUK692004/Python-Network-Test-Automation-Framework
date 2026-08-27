@@ -1,0 +1,36 @@
+# Network Test Automation Framework — Performance Test Configuration
+# Phase 3. Loaded via network_tests.yaml_config.
+
+target:
+  host: "127.0.0.1"
+
+performance:
+  throughput:
+    enabled: true
+    duration_seconds: 2.0
+    buffer_size: 65536
+    data_chunk_bytes: 65536
+    port: 5001
+
+  udp_throughput:
+    enabled: true
+    packet_count: 100
+    payload_size: 1024
+    port: 5002
+
+  latency:
+    samples: 20
+
+  packet_loss:
+    samples: 20
+
+thresholds:
+  throughput:
+    min_mbps: 0.0
+
+  latency:
+    max_average_ms: 100
+    max_p95_ms: 150
+
+  packet_loss:
+    max_percent: 5.0

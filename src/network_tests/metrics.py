@@ -54,7 +54,13 @@ def packet_loss_percentage(sent: int, received: int) -> float:
     """
     if sent <= 0:
         return 0.0
-    return (sent - received) / sent * 100.0
+    if received < 0 or received > sent:
+        logger.warning(
+            f"packet_loss_percentage: implausible received count ({received} "
+            f"for {sent} sent); clamping result to valid range."
+        )
+    lost = min(max(sent - received, 0), sent)
+    return lost / sent * 100.0
 
 
 def calculate_latency_stats(

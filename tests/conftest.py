@@ -166,3 +166,54 @@ def udp_drop_server() -> Generator[Tuple[str, int], None, None]:
     except OSError:
         pass
 
+
+
+@pytest.fixture
+def tcp_sink_server() -> Generator[Tuple[str, int], None, None]:
+    """
+    Fixture that spins up a temporary TCP "sink" server on localhost.
+
+    Accepts one connection at a time, drains received data (discarding it),
+    enabling deterministic offline TCP throughput measurements.
+
+    Yields:
+        Tuple[str, int]: (host, port) of the listening socket.
+    """
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind(("127.0.0.1", 0))
+    server_socket.listen(2)
+    host, port = server_socket.getsockname()
+
+    stop_event = threading.Event()
+
+    def run_server():
+        server_socket.settimeout(0.3)
+        while not stop_event.is_set():
+            try:
+                conn, _ = server_socket.accept()
+                conn.settimeout(0.5)
+                try:
+                    while conn.recv(65536):
+                        pass
+                except (socket.timeout, OSError):
+                    pass
+                finally:
+                    conn.close()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+
+    yield host, port
+
+    stop_event.set()
+    thread.join(timeout=1.0)
+    try:
+        server_socket.close()
+    except OSError:
+        pass
+
