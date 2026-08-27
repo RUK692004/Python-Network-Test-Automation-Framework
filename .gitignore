@@ -1,0 +1,26 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Pytest / Cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# IDE / System
+.vscode/
+.idea/
+.DS_Store
