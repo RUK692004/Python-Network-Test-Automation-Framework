@@ -3,16 +3,17 @@ Package initialization for network_tests module.
 """
 
 from network_tests.config import TestConfig, DEFAULT_CONFIG
-from network_tests.udp import UDPResult, udp_send, udp_send_receive
+from network_tests.results import TestResult
+from network_tests.udp import udp_send, udp_send_receive
 from network_tests.metrics import (
     LatencyStats,
     calculate_latency_stats,
     measure_udp_latency,
     packet_loss_percentage,
 )
-from network_tests.tcp import TCPResult, test_tcp_connection
-from network_tests.port import PortStatusResult, check_port_availability
-from network_tests.ping import PingResult, ping_target
+from network_tests.tcp import test_tcp_connection
+from network_tests.port import check_port_availability
+from network_tests.ping import ping_target
 from network_tests.statistics import (
     LatencyStatistics,
     PacketLossStatistics,
@@ -43,14 +44,12 @@ from network_tests.yaml_config import (
 __all__ = [
     "TestConfig",
     "DEFAULT_CONFIG",
-    "UDPResult",
+    "TestResult",
     "udp_send",
     "udp_send_receive",
-    "TCPResult",
     "test_tcp_connection",
-    "PortStatusResult",
     "check_port_availability",
-    "PingResult",
+    "ping_target",
     "ping_target",
     "LatencyStats",
     "calculate_latency_stats",

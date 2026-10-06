@@ -50,6 +50,10 @@ class TestResult:
             of keys here.
     """
 
+    # Tells pytest not to attempt to collect this dataclass as a test class
+    # (its name matches the default ``Test*`` class pattern).
+    __test__ = False
+
     test_name: str
     status: str
     target: str
@@ -75,13 +79,14 @@ class TestResult:
         target: str,
         latency_ms: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        duration_ms: float = 0.0,
     ) -> "TestResult":
         """Build a `TestResult` with status `STATUS_PASS`."""
         return cls(
             test_name=test_name,
             status=cls.STATUS_PASS,
             target=target,
-            duration_ms=0.0,
+            duration_ms=duration_ms,
             latency_ms=latency_ms,
             error=None,
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -96,13 +101,14 @@ class TestResult:
         message: str,
         latency_ms: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        duration_ms: float = 0.0,
     ) -> "TestResult":
         """Build a `TestResult` with status `STATUS_FAIL` and the given error."""
         return cls(
             test_name=test_name,
             status=cls.STATUS_FAIL,
             target=target,
-            duration_ms=0.0,
+            duration_ms=duration_ms,
             latency_ms=latency_ms,
             error=message,
             timestamp=datetime.now(timezone.utc).isoformat(),

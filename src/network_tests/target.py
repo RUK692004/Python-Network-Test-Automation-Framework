@@ -80,6 +80,7 @@ class Target:
 
         # Split off optional protocol suffix (e.g. "/udp", "/icmp")
         protocol = "tcp"
+        host_part = clean
         if "/" in clean:
             host_part, _, proto_part = clean.partition("/")
             proto_part = proto_part.strip().lower()
@@ -87,7 +88,7 @@ class Target:
                 protocol = proto_part
 
         # Split host and port
-        host = clean
+        host = host_part.strip()
         port = None
         if ":" in host_part:
             host_part, _, port_part = host_part.rpartition(":")

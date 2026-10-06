@@ -7,51 +7,19 @@ explicit handling of socket errors and timeouts. All sockets are closed
 safely via try/finally.
 """
 
-from dataclasses import dataclass
 import socket
 import time
 from typing import Optional
 
 from utils.logger import get_logger
 
+from .results import TestResult
+
 logger = get_logger("network_tests.udp")
 
 DEFAULT_BUFFER_SIZE = 4096
 PORT_MIN = 1
 PORT_MAX = 65535
-
-
-@dataclass
-class UDPResult:
-    """
-    Structured result of a single UDP operation.
-
-    Attributes:
-        success: True if the operation completed as intended.
-        host: Target IP address or hostname.
-        port: Target UDP port.
-        message: Human-readable summary of the outcome.
-        latency_ms: Round-trip time in milliseconds (only for send/receive).
-        error_type: Name of the exception/condition if the operation failed.
-        sent: Number of datagrams sent.
-        received: Number of responses received.
-    """
-
-    success: bool
-    host: str
-    port: int
-    message: str
-    latency_ms: Optional[float] = None
-    error_type: Optional[str] = None
-    sent: int = 1
-    received: int = 0
-
-    def __str__(self) -> str:
-        return (
-            f"UDPResult(success={self.success}, host={self.host}, port={self.port}, "
-            f"message={self.message!r}, latency_ms={self.latency_ms}, "
-            f"error_type={self.error_type})"
-        )
 
 
 def _validate_target(host: str, port: int) -> Optional[str]:
@@ -92,21 +60,27 @@ def _validate_udp_options(data: bytes, timeout: float) -> Optional[str]:
     return None
 
 
-def _udp_result_from_validation(host: str, port: int, error: str) -> UDPResult:
-    """Build a failed UDPResult from a validation error."""
+def _udp_result_from_validation(host: str, port: int, error: str) -> TestResult:
+    """Build a failed `TestResult` from a validation error."""
     logger.error(f"UDP test FAILED | Target: {host}:{port} | Message: {error}")
-    return UDPResult(
-        success=False,
-        host=str(host),
-        port=port,
+    return TestResult.failure(
+        test_name="UDP Send/Receive",
+        target=f"{host}:{port}",
         message=error,
-        error_type="ValueError",
+        metadata={
+            "success": False,
+            "message": error,
+            "error_type": "ValueError",
+            "sent": 0,
+            "received": 0,
+            "port": port,
+        },
     )
 
 
 def udp_send(
     host: str, port: int, data: bytes = b"probe", timeout: float = 1.0
-) -> UDPResult:
+) -> TestResult:
     """
     Send a single UDP datagram to the target without waiting for a response.
 
@@ -117,7 +91,8 @@ def udp_send(
         timeout: Socket timeout in seconds (defensive; UDP sends are non-blocking).
 
     Returns:
-        UDPResult: Structured result of the send operation.
+        TestResult: Canonical result; ``metadata`` carries ``success``,
+        ``message``, ``error_type``, ``sent``, ``received`` and ``port``.
     """
     error = _validate_target(host, port)
     if error is not None:
@@ -136,42 +111,65 @@ def udp_send(
         sent = sock.sendto(data, (clean_host, port))
         message = f"UDP packet sent ({sent} bytes) to {clean_host}:{port}"
         logger.info(f"UDP SEND | Target: {clean_host}:{port} | Result: SUCCESS | Message: {message}")
-        return UDPResult(
-            success=True,
-            host=clean_host,
-            port=port,
-            message=message,
-            sent=1,
+        return TestResult.success(
+            test_name="UDP Send",
+            target=f"{clean_host}:{port}",
+            metadata={
+                "success": True,
+                "message": message,
+                "error_type": None,
+                "sent": 1,
+                "received": 0,
+                "port": port,
+            },
         )
     except socket.gaierror as err:
         message = f"DNS resolution failed for hostname '{clean_host}' ({err})"
         logger.error(f"UDP SEND FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="socket.gaierror",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "socket.gaierror",
+                "sent": 0,
+                "received": 0,
+                "port": port,
+            },
         )
     except socket.timeout:
         message = f"UDP send timed out after {timeout} seconds"
         logger.error(f"UDP SEND FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="socket.timeout",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "socket.timeout",
+                "sent": 0,
+                "received": 0,
+                "port": port,
+            },
         )
     except OSError as err:
         message = f"UDP socket error during send: {err}"
         logger.error(f"UDP SEND FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="OSError",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "OSError",
+                "sent": 0,
+                "received": 0,
+                "port": port,
+            },
         )
     finally:
         if sock is not None:
@@ -187,7 +185,7 @@ def udp_send_receive(
     data: bytes = b"probe",
     timeout: float = 1.0,
     buffer_size: int = DEFAULT_BUFFER_SIZE,
-) -> UDPResult:
+) -> TestResult:
     """
     Send a UDP datagram and wait for a response, measuring round-trip latency.
 
@@ -199,7 +197,9 @@ def udp_send_receive(
         buffer_size: Receive buffer size in bytes.
 
     Returns:
-        UDPResult: Structured result, including latency_ms when successful.
+        TestResult: Canonical result with the measured round-trip
+        ``latency_ms`` on success; ``metadata`` carries ``success``,
+        ``message``, ``error_type``, ``sent``, ``received`` and ``port``.
     """
     error = _validate_target(host, port)
     if error is not None:
@@ -228,55 +228,84 @@ def udp_send_receive(
         logger.info(
             f"UDP SEND/RECEIVE | Target: {clean_host}:{port} | Result: SUCCESS | Message: {message}"
         )
-        return UDPResult(
-            success=True,
-            host=clean_host,
-            port=port,
-            message=message,
-            latency_ms=latency_ms,
-            sent=1,
-            received=1,
+        return TestResult.success(
+            test_name="UDP Send/Receive",
+            target=f"{clean_host}:{port}",
+            latency_ms=round(latency_ms, 3),
+            duration_ms=round(latency_ms, 3),
+            metadata={
+                "success": True,
+                "message": message,
+                "error_type": None,
+                "sent": 1,
+                "received": 1,
+                "port": port,
+            },
         )
     except socket.timeout:
         message = f"UDP response timeout after {timeout} seconds"
         logger.warning(f"UDP response timeout for {clean_host}:{port}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send/Receive",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="socket.timeout",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "socket.timeout",
+                "sent": 1,
+                "received": 0,
+                "port": port,
+            },
         )
     except socket.gaierror as err:
         message = f"DNS resolution failed for hostname '{clean_host}' ({err})"
         logger.error(f"UDP SEND/RECEIVE FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send/Receive",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="socket.gaierror",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "socket.gaierror",
+                "sent": 0,
+                "received": 0,
+                "port": port,
+            },
         )
     except ConnectionResetError as err:
         # A closed UDP port may surface an ICMP port-unreachable as a reset.
         message = f"UDP target unreachable (connection reset): {err}"
         logger.error(f"UDP SEND/RECEIVE FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send/Receive",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="ConnectionResetError",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "ConnectionResetError",
+                "sent": 1,
+                "received": 0,
+                "port": port,
+            },
         )
     except OSError as err:
         message = f"UDP socket error: {err}"
         logger.error(f"UDP SEND/RECEIVE FAILED | Target: {clean_host}:{port} | Message: {message}")
-        return UDPResult(
-            success=False,
-            host=clean_host,
-            port=port,
+        return TestResult.failure(
+            test_name="UDP Send/Receive",
+            target=f"{clean_host}:{port}",
             message=message,
-            error_type="OSError",
+            metadata={
+                "success": False,
+                "message": message,
+                "error_type": "OSError",
+                "sent": 1,
+                "received": 0,
+                "port": port,
+            },
         )
     finally:
         if sock is not None:

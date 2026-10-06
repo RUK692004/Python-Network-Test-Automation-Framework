@@ -10,7 +10,7 @@ import socket
 # Import the module rather than `test_tcp_connection` by name so pytest does
 # not treat the imported function as a phantom test case (fixture 'host').
 from network_tests import tcp as tcp_module
-from network_tests.tcp import TCPResult
+from network_tests.results import TestResult
 
 
 @pytest.mark.tcp
@@ -22,12 +22,17 @@ def test_tcp_connection_success(mock_tcp_server: Tuple[str, int]):
     host, port = mock_tcp_server
     result = tcp_module.test_tcp_connection(host=host, port=port, timeout=2.0)
 
-    assert isinstance(result, TCPResult)
-    assert result.is_connected is True
+    assert isinstance(result, TestResult)
+    assert result.is_success is True
     assert result.status == "PASS"
-    assert result.message == "TCP connection established"
-    assert result.target == host
-    assert result.port == port
+    assert result.error is None
+    assert result.target == f"{host}:{port}"
+    assert result.duration_ms >= 0
+    assert result.latency_ms is not None and result.latency_ms >= 0.0
+    assert isinstance(result.metadata, dict)
+    assert result.metadata["is_connected"] is True
+    assert result.metadata["message"] == "TCP connection established"
+    assert result.metadata["port"] == port
 
 
 @pytest.mark.tcp
@@ -55,11 +60,12 @@ def test_tcp_connection_refused(monkeypatch):
 
     result = tcp_module.test_tcp_connection(host="127.0.0.1", port=80, timeout=1.0)
 
-    assert isinstance(result, TCPResult)
-    assert result.is_connected is False
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
     assert result.status == "FAIL"
-    assert result.error_type == "ConnectionRefusedError"
-    assert result.message == "Connection refused"
+    assert result.error == "Connection refused"
+    assert result.metadata["is_connected"] is False
+    assert result.metadata["error_type"] == "ConnectionRefusedError"
 
 
 @pytest.mark.tcp
@@ -71,10 +77,11 @@ def test_tcp_invalid_hostname():
     invalid_host = "invalid.hostname.test.nonexistent"
     result = tcp_module.test_tcp_connection(host=invalid_host, port=80, timeout=1.0)
 
-    assert isinstance(result, TCPResult)
-    assert result.is_connected is False
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
     assert result.status == "FAIL"
-    assert result.error_type == "socket.gaierror"
+    assert result.metadata["is_connected"] is False
+    assert result.metadata["error_type"] == "socket.gaierror"
 
 
 @pytest.mark.tcp
@@ -86,8 +93,9 @@ def test_tcp_invalid_port():
     invalid_port = 999999
     result = tcp_module.test_tcp_connection(host="127.0.0.1", port=invalid_port, timeout=1.0)
 
-    assert isinstance(result, TCPResult)
-    assert result.is_connected is False
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
     assert result.status == "FAIL"
-    assert "Invalid port" in result.message
-    assert "between 1 and 65535" in result.message
+    assert result.metadata["error_type"] == "ValueError"
+    assert "Invalid port" in result.error
+    assert "between 1 and 65535" in result.error

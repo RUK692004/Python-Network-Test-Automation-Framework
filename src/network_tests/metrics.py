@@ -153,11 +153,14 @@ def measure_udp_latency(
             timeout=timeout,
             buffer_size=buffer_size,
         )
-        if result.success and result.latency_ms is not None:
+        if result.is_success and result.latency_ms is not None:
             received += 1
             latencies.append(result.latency_ms)
         else:
-            logger.warning(f"Packet {index}/{packet_count} lost: {result.message}")
+            logger.warning(
+                f"Packet {index}/{packet_count} lost: "
+                f"{result.error or result.metadata.get('message')}"
+            )
 
     stats = calculate_latency_stats(latencies, sent=packet_count, received=received)
     logger.info(

@@ -73,6 +73,9 @@ class NetworkTestRunner:
         - "port"        (port availability)
         - "udp"         (UDP send / send-receive)
 
+    Future engines (DNS, TLS, HTTP, performance, capacity) will be added as
+    new modules and registered here without changing the dispatcher.
+    """
 
     # ------------------------------------------------------------------
     # Public API
@@ -129,7 +132,6 @@ class NetworkTestRunner:
             # Programming-level errors (bug in runner, socket creation failure,
             # etc.) are NOT network-test failures.  They are raised so callers
             # can distinguish them from normal network failures.
-            duration_ms = self._elapsed_ms(start)
             self._logger.error(
                 f"Unexpected exception in '{test_type}' for '{target}': {exc!r}"
             )
@@ -138,10 +140,63 @@ class NetworkTestRunner:
         duration_ms = self._elapsed_ms(start)
 
         # Convert module result to standardised TestResult
-        try:
+        standardized = self._to_standard_result(
+            test_type, target_obj, module_result, duration_ms
+        )
+        self._logger.info(
+            f"{test_type} test completed for '{target}': "
+            f"status={standardized.status} in {duration_ms} ms"
+        )
+        return standardized
 
     # ------------------------------------------------------------------
-    # Per-type converters (module result -> standardised result)
+    # Result conversion
+    # ------------------------------------------------------------------
+
+    def _to_standard_result(
+        self,
+        test_type: str,
+        target_obj: Target,
+        module_result: Any,
+        duration_ms: float,
+    ) -> TestResult:
+        """
+        Return the canonical `TestResult` for a raw module result.
+
+        Modules already return `TestResult`, so the common path is a direct
+        pass-through.  Legacy (pre-canonical) module results are still
+        supported through the per-type converters below, and any conversion
+        failure is downgraded to a structured failure result rather than
+        crashing the caller.
+        """
+        if isinstance(module_result, TestResult):
+            # Stamp the runner-measured wall-clock duration so failures
+            # (which the modules leave at 0.0) still report a real duration.
+            module_result.duration_ms = duration_ms
+            return module_result
+
+        converters = {
+            "ping": self._convert_ping,
+            "tcp": self._convert_tcp,
+            "port": self._convert_port,
+            "udp": self._convert_udp,
+        }
+        try:
+            return converters[test_type](module_result, target_obj, duration_ms)
+        except Exception as exc:  # noqa: BLE001
+            self._logger.error(
+                f"Failed to convert result for '{test_type}' "
+                f"'{target_obj}': {exc!r}"
+            )
+            return TestResult.failure(
+                test_name=test_type,
+                target=target_obj.to_string(),
+                message=f"Internal error formatting result: {exc!r}",
+                duration_ms=duration_ms,
+            )
+
+    # ------------------------------------------------------------------
+    # Per-type converters (legacy module result -> standardised result)
     # ------------------------------------------------------------------
 
     def _convert_ping(
@@ -208,24 +263,6 @@ class NetworkTestRunner:
             metadata=metadata,
         )
 
-            standardized = self._to_standard_result(
-                test_type, target_obj, module_result, duration_ms
-            )
-        except Exception as exc:  # noqa: BLE001
-            # If conversion fails, fall back to a structured failure.
-            self._logger.error(
-                f"Failed to convert result for '{test_type}' "
-                f"'{target_obj}': {exc!r}"
-            )
-            return TestResult.failure(
-                test_name=test_type,
-                target=target_obj.to_string(),
-                message=f"Internal error formatting result: {exc!r}",
-                duration_ms=duration_ms,
-            )
-
-        return standardized
-
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -255,11 +292,43 @@ class NetworkTestRunner:
     ) -> Any:
         """
         Call the low-level test function for the given test type.
+
+        This deliberately contains *no* business logic; it only forwards
+        arguments to the correct module-level function.
         """
         module = self._TEST_DISPATCH[test_type]
-        target_str = target_obj.to_string()
+        timeout = params.get("timeout", self.config.timeout)
 
-        # Build keyword args appropriate for this test type
+        if test_type == "ping":
+            return module.ping_target(
+                host=target_obj.host,
+                count=int(params.get("count", 1)),
+                timeout=int(timeout),
+            )
+        if test_type == "tcp":
+            return module.test_tcp_connection(
+                host=target_obj.host,
+                port=target_obj.port or 0,
+                timeout=timeout,
+            )
+        if test_type == "port":
+            return module.check_port_availability(
+                host=target_obj.host,
+                port=target_obj.port or 0,
+                timeout=timeout,
+            )
+        if test_type == "udp":
+            # UDP requires a port
+            if target_obj.port is None:
+                raise ValueError("UDP tests require a port in the target string.")
+            return module.udp_send_receive(
+                host=target_obj.host,
+                port=target_obj.port,
+                data=b"probe",
+                timeout=timeout,
+            )
+        # Should never get here – already validated in run()
+        raise ValueError(f"Unknown test type: {test_type}")
 
     def _convert_udp(
         self, module_result: Any, target_obj: Target, duration_ms: float
@@ -302,42 +371,6 @@ class NetworkTestRunner:
         elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
         return round(elapsed, 3)
 
-        if test_type == "ping":
-            return module.ping_target(
-                host=target_obj.host,
-                count=params.get("count", 1),
-                timeout=params.get("timeout", self.config.timeout),
-            )
-        elif test_type == "tcp":
-            return module.test_tcp_connection(
-                host=target_obj.host,
-                port=target_obj.port or 0,
-                timeout=params.get("timeout", self.config.timeout),
-            )
-        elif test_type == "port":
-            return module.check_port_availability(
-                host=target_obj.host,
-                port=target_obj.port or 0,
-                timeout=params.get("timeout", self.config.timeout),
-            )
-        elif test_type == "udp":
-            # UDP requires a port
-            if target_obj.port is None:
-                raise ValueError("UDP tests require a port in the target string.")
-            return module.udp_send_receive(
-                host=target_obj.host,
-                port=target_obj.port,
-                data=b"probe",
-                timeout=params.get("timeout", self.config.timeout),
-            )
-        else:
-            # Should never get here – already validated in run()
-            raise ValueError(f"Unknown test type: {test_type}")
-
-    Future engines (DNS, TLS, HTTP, performance, capacity) will be added as
-    new modules and registered here without changing the dispatcher.
-    """
-
     #: Mapping of test-type string -> low-level module that exposes the
     #: corresponding test function.
     _TEST_DISPATCH: Dict[str, Any] = {
@@ -356,4 +389,4 @@ class NetworkTestRunner:
             logger: Optional logger instance.  Uses the module logger if `None`.
         """
         self.config = config or TestConfig()
-        self._logger = logger or logger
+        self._logger = logger if logger is not None else get_logger("network_tests.runner")

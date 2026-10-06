@@ -7,7 +7,8 @@ import pytest
 # Aliased so the dataclass name does not start with "Test" (pytest would
 # otherwise try to collect TestConfig as a test class and raise a warning).
 from network_tests.config import TestConfig as TargetsConfig
-from network_tests.ping import ping_target, PingResult
+from network_tests.ping import ping_target
+from network_tests.results import TestResult
 
 
 @pytest.mark.ping
@@ -22,11 +23,14 @@ def test_ping_reachable_host(target_config: TargetsConfig):
         count=1,
     )
 
-    assert isinstance(result, PingResult)
-    assert result.is_reachable is True
+    assert isinstance(result, TestResult)
+    assert result.is_success is True
     assert result.status == "PASS"
-    assert result.message == "Host is reachable"
+    assert result.error is None
     assert result.target == target_config.host
+    assert result.duration_ms >= 0
+    assert isinstance(result.metadata, dict)
+    assert result.metadata["is_reachable"] is True
 
 
 @pytest.mark.ping
@@ -39,7 +43,25 @@ def test_ping_unreachable_host():
     unreachable_ip = "192.0.2.1"
     result = ping_target(host=unreachable_ip, timeout=1, count=1)
 
-    assert isinstance(result, PingResult)
-    assert result.is_reachable is False
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
     assert result.status == "FAIL"
-    assert "unreachable" in result.message.lower() or "timed out" in result.message.lower()
+    assert result.target == unreachable_ip
+    assert result.duration_ms >= 0
+    error = (result.error or "").lower()
+    assert "unreachable" in error or "timed out" in error
+    assert result.metadata["is_reachable"] is False
+
+
+@pytest.mark.ping
+@pytest.mark.network
+def test_ping_invalid_host_returns_failure_result():
+    """
+    Verify a blank host yields a structured FAIL TestResult instead of raising.
+    """
+    result = ping_target(host="", timeout=1, count=1)
+
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.status == "FAIL"
+    assert "Invalid target host" in (result.error or "")

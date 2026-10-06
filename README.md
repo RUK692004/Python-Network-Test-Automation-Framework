@@ -16,9 +16,11 @@ This framework automates network connectivity verification by providing reusable
 
 ## Features in Phase 1
 
-- **Ping / Connectivity Testing (`ping.py`)**: Executes system-level ICMP ping commands with configurable timeouts, handling reachability evaluation without unhandled exceptions.
-- **TCP Connection Testing (`tcp.py`)**: Establishes TCP socket connections to target host and port pairs with configurable timeouts and strict socket context cleanup.
-- **Port Availability Testing (`port.py`)**: Evaluates port reachability, distinguishing between `OPEN`, `CLOSED` (refused), `TIMEOUT`, and `INVALID_HOST` states.
+- **Canonical Test Result (`results.py`)**: Every diagnostic operation (ping, TCP, UDP, port) returns the same `TestResult` contract — `test_name`, `status` (`PASS`/`FAIL`), `target`, `duration_ms`, `latency_ms`, `error`, `timestamp`, and a free-form `metadata` dict — with `success()`/`failure()` factories and `to_dict()`/`from_dict()` serialization for later API/reporting phases.
+- **Central Test Orchestrator (`runner.py`)**: `NetworkTestRunner.run(test_type, target, **kwargs)` validates the request, parses the target, dispatches to the correct low-level primitive, measures wall-clock duration, and always yields a `TestResult`. Unsupported test types raise `ValueError`; non-string targets raise `TypeError`.
+- **Ping / Connectivity Testing (`ping.py`)**: Executes system-level ICMP ping commands with configurable timeouts, handling reachability evaluation without unhandled exceptions; reachability and packet statistics are reported in `TestResult.metadata`.
+- **TCP Connection Testing (`tcp.py`)**: Establishes TCP socket connections to target host and port pairs with configurable timeouts and strict socket context cleanup; the measured TCP handshake time is reported as `latency_ms`.
+- **Port Availability Testing (`port.py`)**: Evaluates port reachability, distinguishing between `OPEN`, `CLOSED` (refused), `TIMEOUT`, and `INVALID_HOST` states (recorded in `TestResult.metadata`).
 - **Configurable Test Targets (`config.py` & `test_config.py`)**: Allows host, port, and timeout values to be configured via environment variables or Python constants without hard-coding values inside test cases.
 - **Centralized Logging (`logger.py`)**: Outputs detailed timestamps, log levels, and execution metrics to both console stdout and `logs/network_tests.log`.
 - **Pytest Suite (`tests/`)**: Automated test execution using `pytest` fixtures, markers, and assertion tracking.
@@ -182,6 +184,50 @@ TCP_TIMEOUT = 3.0
 
 ---
 
+## Phase 1 Concepts: Canonical Results & the Test Runner
+
+### The `TestResult` Contract
+
+All diagnostic operations share one result model, so downstream consumers
+(API, reports, dashboards) never have to branch on test type:
+
+```python
+from network_tests.results import TestResult
+
+result = TestResult.success(
+    test_name="Ping",
+    target="8.8.8.8",
+    latency_ms=12.4,
+    duration_ms=45.0,
+    metadata={"is_reachable": True, "packet_loss_percent": 0.0},
+)
+
+assert result.is_success            # status == "PASS"
+payload = result.to_dict()          # JSON-serializable
+restored = TestResult.from_dict(payload)
+```
+
+Test-specific details (packet counters, port state, error types) live in
+`metadata`; the common fields stay stable for reporting and API layers.
+
+### Orchestrating Tests with `NetworkTestRunner`
+
+```python
+from network_tests.runner import NetworkTestRunner
+
+runner = NetworkTestRunner()
+result = runner.run("tcp", "example.com:443", timeout=3.0)
+print(result.status, result.latency_ms, result.error)
+```
+
+Supported types are `"ping"`, `"tcp"`, `"port"` and `"udp"`. The runner is
+deliberately thin — it validates and normalises input, measures duration, and
+delegates all network logic to the primitive modules. Normal network failures
+(refused, timeout, DNS) come back as `status="FAIL"` results, while programming
+errors and invalid arguments raise so callers can tell them apart.
+
+---
+
 ## Phase 2 Concepts: UDP, Packet Loss & Latency
 
 ### UDP Testing
@@ -194,8 +240,9 @@ The framework tests UDP communication using Python `socket` (SOCK_DGRAM). It can
 
 Every UDP operation validates the target, uses an explicit timeout, handles
 invalid hostnames, unresolved hosts, closed/unreachable ports, and resource
-cleanup, and returns a structured `UDPResult` (never a raw string or an
-unhandled exception).
+cleanup, and returns a canonical `TestResult` (with `success`, `error_type`
+and `sent`/`received` counters carried in `metadata` — never a raw string or
+an unhandled exception).
 
 ### Packet Loss
 
@@ -412,6 +459,7 @@ network-test-automation/
 │   ├── test_tcp.py             # TCP handshake connection test cases
 │   ├── test_port.py            # TCP Port status (OPEN/CLOSED/TIMEOUT) test cases
 │   ├── test_udp.py             # UDP communication test cases
+│   ├── test_runner.py            # TestResult contract & NetworkTestRunner tests
 │   ├── test_metrics.py         # Packet-loss / latency statistics test cases
 │   ├── test_statistics.py      # Extended latency & loss statistics tests
 │   ├── test_thresholds.py      # Performance threshold evaluation tests
@@ -432,6 +480,9 @@ network-test-automation/
 │       ├── throughput.py       # TCP/UDP throughput measurement modules
 │       ├── yaml_config.py      # YAML performance configuration loader
 │       ├── iperf3.py           # Optional external iperf3 integration
+│       ├── runner.py            # Central test orchestration layer (NetworkTestRunner)
+│       ├── results.py           # Canonical TestResult contract (returned by every test)
+│       ├── target.py            # Target string parsing (host, port, protocol)
 │       └── config.py           # Target configuration loader dataclass
 │
 ├── utils/                      # Helper utilities

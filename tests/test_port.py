@@ -5,7 +5,8 @@ Automated pytest suite for TCP Port Availability tests.
 from typing import Tuple
 import pytest
 
-from network_tests.port import check_port_availability, PortStatusResult
+from network_tests.port import check_port_availability
+from network_tests.results import TestResult
 
 
 @pytest.mark.port
@@ -17,12 +18,17 @@ def test_port_availability_open(mock_tcp_server: Tuple[str, int]):
     host, port = mock_tcp_server
     result = check_port_availability(host=host, port=port, timeout=2.0)
 
-    assert isinstance(result, PortStatusResult)
-    assert result.is_open is True
-    assert result.state == "OPEN"
-    assert "OPEN" in result.message
-    assert result.target == host
-    assert result.port == port
+    assert isinstance(result, TestResult)
+    assert result.is_success is True
+    assert result.status == "PASS"
+    assert result.error is None
+    assert result.target == f"{host}:{port}"
+    assert result.duration_ms >= 0
+    assert isinstance(result.metadata, dict)
+    assert result.metadata["is_open"] is True
+    assert result.metadata["state"] == "OPEN"
+    assert "OPEN" in result.metadata["message"]
+    assert result.metadata["port"] == port
 
 
 @pytest.mark.port
@@ -34,10 +40,13 @@ def test_port_availability_closed(closed_port: Tuple[str, int]):
     host, port = closed_port
     result = check_port_availability(host=host, port=port, timeout=1.0)
 
-    assert isinstance(result, PortStatusResult)
-    assert result.is_open is False
-    assert result.state == "CLOSED"
-    assert "CLOSED" in result.message
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.status == "FAIL"
+    assert result.duration_ms >= 0
+    assert result.metadata["is_open"] is False
+    assert result.metadata["state"] == "CLOSED"
+    assert "CLOSED" in result.error
 
 
 @pytest.mark.port
@@ -49,6 +58,8 @@ def test_port_availability_invalid_host():
     invalid_host = "invalid.hostname.test.nonexistent"
     result = check_port_availability(host=invalid_host, port=80, timeout=1.0)
 
-    assert isinstance(result, PortStatusResult)
-    assert result.is_open is False
-    assert result.state == "INVALID_HOST"
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.status == "FAIL"
+    assert result.metadata["is_open"] is False
+    assert result.metadata["state"] == "INVALID_HOST"

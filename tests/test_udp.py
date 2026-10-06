@@ -7,7 +7,8 @@ from typing import Tuple
 
 import pytest
 
-from network_tests.udp import udp_send, udp_send_receive, UDPResult
+from network_tests.udp import udp_send, udp_send_receive
+from network_tests.results import TestResult
 
 
 @pytest.mark.udp
@@ -19,9 +20,12 @@ def test_udp_send_to_valid_target(udp_server: Tuple[str, int]):
     host, port = udp_server
     result = udp_send(host=host, port=port, data=b"hello udp", timeout=1.0)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is True
-    assert result.sent == 1
+    assert isinstance(result, TestResult)
+    assert result.is_success is True
+    assert result.status == "PASS"
+    assert isinstance(result.metadata, dict)
+    assert result.metadata["success"] is True
+    assert result.metadata["sent"] == 1
 
 
 @pytest.mark.udp
@@ -34,12 +38,12 @@ def test_udp_send_receive_echo(udp_server: Tuple[str, int]):
     host, port = udp_server
     result = udp_send_receive(host=host, port=port, data=b"ping-udp", timeout=1.0)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is True
-    assert result.received == 1
+    assert isinstance(result, TestResult)
+    assert result.is_success is True
+    assert result.metadata["received"] == 1
     assert result.latency_ms is not None
     assert result.latency_ms >= 0.0
-    assert "response" in result.message.lower()
+    assert "response" in result.metadata["message"].lower()
 
 
 @pytest.mark.udp
@@ -54,7 +58,7 @@ def test_udp_multiple_packets(udp_server: Tuple[str, int]):
         result = udp_send_receive(
             host=host, port=port, data=f"packet-{index}".encode(), timeout=1.0
         )
-        if result.success:
+        if result.is_success:
             successful += 1
 
     assert successful == 5
@@ -70,9 +74,10 @@ def test_udp_invalid_hostname():
         host="invalid.hostname.test.nonexistent", port=5000, timeout=1.0
     )
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "socket.gaierror"
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.status == "FAIL"
+    assert result.metadata["error_type"] == "socket.gaierror"
 
 
 @pytest.mark.udp
@@ -83,10 +88,10 @@ def test_udp_empty_host():
     """
     result = udp_send_receive(host="   ", port=5000, timeout=1.0)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "ValueError"
-    assert "host" in result.message.lower()
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] == "ValueError"
+    assert "host" in result.error.lower()
 
 
 @pytest.mark.udp
@@ -98,11 +103,11 @@ def test_udp_invalid_port(invalid_port: int):
     """
     result = udp_send_receive(host="127.0.0.1", port=invalid_port, timeout=1.0)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "ValueError"
-    assert "Invalid port" in result.message
-    assert "between 1 and 65535" in result.message
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] == "ValueError"
+    assert "Invalid port" in result.error
+    assert "between 1 and 65535" in result.error
 
 
 @pytest.mark.udp
@@ -122,9 +127,9 @@ def test_udp_no_response_closed_port():
 
     result = udp_send_receive(host="127.0.0.1", port=port, data=b"x", timeout=0.3)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type in {"socket.timeout", "ConnectionResetError"}
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] in {"socket.timeout", "ConnectionResetError"}
 
 
 @pytest.mark.udp
@@ -144,10 +149,10 @@ def test_udp_timeout_branch(monkeypatch):
 
     result = udp_send_receive(host="127.0.0.1", port=5000, data=b"x", timeout=0.1)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "socket.timeout"
-    assert "timeout" in result.message.lower()
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] == "socket.timeout"
+    assert "timeout" in result.error.lower()
 
 
 @pytest.mark.udp
@@ -158,10 +163,10 @@ def test_udp_invalid_data_type():
     """
     result = udp_send_receive(host="127.0.0.1", port=5000, data="not-bytes", timeout=1.0)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "ValueError"
-    assert "bytes" in result.message.lower()
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] == "ValueError"
+    assert "bytes" in result.error.lower()
 
 
 @pytest.mark.udp
@@ -172,13 +177,11 @@ def test_udp_invalid_timeout(invalid_timeout: float):
     Verify UDP send/receive rejects a non-positive timeout as a structured result.
 
     This ensures a raw ValueError is not raised from socket.settimeout; it is
-    instead classified and returned as a failed UDPResult.
+    instead classified and returned as a failed TestResult.
     """
     result = udp_send_receive(host="127.0.0.1", port=5000, data=b"x", timeout=invalid_timeout)
 
-    assert isinstance(result, UDPResult)
-    assert result.success is False
-    assert result.error_type == "ValueError"
-    assert "timeout" in result.message.lower()
-
-
+    assert isinstance(result, TestResult)
+    assert result.is_success is False
+    assert result.metadata["error_type"] == "ValueError"
+    assert "timeout" in result.error.lower()
